@@ -17,6 +17,11 @@ dirs_info = {
   "dirs": []
 }
 
+def init_json():
+  global dirs_info
+  with open(json_path_env, "w") as json_file:
+    json.dump(dirs_info, json_file)
+
 def load_json():
   global dirs_info
   if os.path.exists(json_path_env):
@@ -24,6 +29,7 @@ def load_json():
       dirs_info = json.load(json_file)
   else:
     print("No json file config found")
+    init_json()
     exit(1)
 
 # TODO: agregar funciones de comnuicacion con el servidor
@@ -69,7 +75,7 @@ def download_file_server(path_server: str, local_path: str):
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/list/{path_server}?t={api_key}", stream=True)
-  with open(Path(f"{local_path}/{path_server}"), 'wb') as f:
+  with open(Path(local_path), 'wb') as f:
     for chunk in resp.iter_content(chunk_size=8192):
       f.write(chunk)
   if resp.status_code != 200:
@@ -122,7 +128,7 @@ def upload_file_server(path_server: str, file_path: Path):
 def read_file_local(path: str):
   return open(path, "rb")
 
-def exists_local(path: str):
+def exists_local(path: Path):
   return os.path.exists(path)
 
 def create_dir_local(path: str):
@@ -147,7 +153,6 @@ def sync_get_data(data: dict, virtual_path: str = ""):
 
   for file in list_dir_local(local_virtual_path):
     file_virtual_path_server = path.join(remote_virtual_path, file.name)
-    file_virtual_path_local = path.join(local_virtual_path, file.name)
     if file.is_dir():
       if exists_server(file_virtual_path_server):
         file_server_props = properties_server(file_virtual_path_server)
@@ -155,8 +160,8 @@ def sync_get_data(data: dict, virtual_path: str = ""):
           create_dir_local(file_virtual_path_server)
       sync_get_data(data, file_virtual_path_server)
     else:
-      if exists_server(file_virtual_path_server):
-        download_file_server(file_virtual_path_server, file_virtual_path_local)
+      if exists_server(file_virtual_path_server) and not exists_local(file):
+        download_file_server(file_virtual_path_server, file)
   
 
 def sync_send_data(data: dict, virtual_path: str = ""):
