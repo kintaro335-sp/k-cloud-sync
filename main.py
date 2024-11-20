@@ -232,6 +232,8 @@ def main():
   load_json()
   auth = verify_auth()
   if auth == None:
+    print("Error al verificar la autenticacion")
+    logging.error("Error al verificar la autenticacion")
     exit(1)
   for dir in dirs_info["dirs"]:
     sync_dir(dir)
