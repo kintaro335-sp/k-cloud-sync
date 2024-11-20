@@ -4,18 +4,40 @@ load_dotenv()
 import json
 import requests
 from pathlib import Path
-
+from typing import Optional, List, Literal
+from pydantic import BaseModel, ValidationError
+import logging
 from os import path
+
+# TODO: agregar logs
 
 F_100MB = 100 * 1024 * 1024
 
 json_path_env = os.getenv("JSON_PATH",os.getcwd() + "/dirs.json")
+
+logs_path_env = os.getenv("LOGS_PATH",os.getcwd() + "/logs.log")
+
+logging.basicConfig(filename=logs_path_env, level=logging.INFO, encoding='utf-8', format='%(asctime)s %(levelname)s %(message)s')
 
 dirs_info = {
   "base_url": "",
   "api_key": "",
   "dirs": []
 }
+
+# modelos de validacion del json
+
+class DirSchema(BaseModel):
+  remote_path: str
+  local_path: str
+  sync_mode: Literal["bidirectional", "send", "get"] = 'get'
+
+class ConfigSchema(BaseModel):
+  base_url: str
+  api_key: str
+  dirs: List[DirSchema]
+
+# fin de modelos de validacion del json
 
 def init_json():
   global dirs_info
@@ -26,60 +48,76 @@ def load_json():
   global dirs_info
   if os.path.exists(json_path_env):
     with open(json_path_env) as json_file:
-      dirs_info = json.load(json_file)
+      json_data = json.load(json_file)
+      try:
+        config = ConfigSchema(**json_data)
+        dirs_info = json.loads(config.model_dump_json())
+      except ValidationError as ve:
+        print(ve)
+        exit(1)
   else:
-    print("No json file config found")
+    print("No json file config found: initializing")
+    logging.error("No json file config found: initializing")
     init_json()
     exit(1)
-
-# TODO: agregar funciones de comnuicacion con el servidor
 
 def verify_auth():
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   if base_url == "" or api_key == "":
     print("No base url or api key found")
+    logging.error("No base url or api key found")
     exit(1)
   resp = requests.get(f"{base_url}/auth?t={api_key}")
   if resp.status_code != 200:
+    print("Error al verificar la autenticacion")
+    logging.error("Error al verificar la autenticacion")
     return None
   return resp.json()
 
 # lectura de archivos
 
-def exists_server(path: str):
+def exists_server(path: str) -> bool:
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/exists/{path}?t={api_key}")
   if resp.status_code != 200:
-    return None
+    print(f"Error al verificar la existencia del archivo: {path}")
+    logging.error(f"Error al verificar la existencia del archivo: {path}")
+    return False
   return resp.json()['exists']
 
-def properties_server(path: str):
+def properties_server(path: str) -> Optional[dict]:
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/properties/{path}?t={api_key}")
   if resp.status_code != 200:
+    print(f"Error al obtener las propiedades del archivo: {path}")
+    logging.error(f"Error al obtener las propiedades del archivo: {path}")
     return None
   return resp.json()
 
-def file_list_server(path: str):
+def file_list_server(path: str) -> List[dict]:
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/list/{path}?t={api_key}")
   if resp.status_code != 200:
-    return None
-  return resp.json()
+    print(f"Error al obtener la lista de archivos: {path}")
+    logging.error(f"Error al obtener la lista de archivos: {path}")
+    return []
+  return resp.json()['list']
 
 def download_file_server(path_server: str, local_path: str):
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/list/{path_server}?t={api_key}", stream=True)
+  if resp.status_code != 200:
+    print(f"Error al descargar el archivo: {path_server}")
+    logging.error(f"Error al descargar el archivo: {path_server}")
+    return None
   with open(Path(local_path), 'wb') as f:
     for chunk in resp.iter_content(chunk_size=8192):
       f.write(chunk)
-  if resp.status_code != 200:
-    return None
   return resp
 
 # escritura de archivos
@@ -100,13 +138,11 @@ def upload_big_file_server(path_server: str, file_path: Path):
   resp_init = requests.post(f"{base_url}/files/initialize/{path_server}?t={api_key}", json={'size': file_size})
   if resp_init.status_code in [200, 201]:
     return None
-  offset = 0
-  while offset < file_size:
+  for offset in range(0, file_size, F_100MB):
     chunk_size = F_100MB
     file_stream.seek(offset)
     chunk = file_stream.read(chunk_size)
     resp = requests.post(f"{base_url}/files/write/{path_server}?t={api_key}&pos={offset}", files={ 'file': (file_path.name, chunk) })
-    offset += chunk_size
 
   return { "message": "ok" }
 
@@ -118,12 +154,9 @@ def upload_file_server(path_server: str, file_path: Path):
     return upload_big_file_server(path_server, file_path)
   files = {'file': open(file_path, 'rb')}
   resp = requests.post(f"{base_url}/files/upload/{path_server}?t={api_key}", files=files)
-  if resp.status_code in [200, 201]:
+  if resp.status_code not in [200, 201]:
     return None
   return resp.json()
-
-
-# TODO: agregar funciones de fs para archivos locales
 
 def read_file_local(path: str):
   return open(path, "rb")
@@ -137,32 +170,23 @@ def create_dir_local(path: str):
 def list_dir_local(path: str):
   return Path(path).iterdir()
 
-# TODO: agrega funciones que hagan tareas que involucran las funciones de arriba
-
-
-
-# TODO: hacer el primer tipo de rutina del tipo send, enviar archivos al servidos.
-
 def sync_get_data(data: dict, virtual_path: str = ""):
   remote_path = data["remote_path"]
   local_path = data["local_path"]
- 
-  
+   
   remote_virtual_path = path.join(remote_path, virtual_path)
   local_virtual_path = path.join(local_path, virtual_path)
 
-  for file in list_dir_local(local_virtual_path):
-    file_virtual_path_server = path.join(remote_virtual_path, file.name)
-    if file.is_dir():
-      if exists_server(file_virtual_path_server):
-        file_server_props = properties_server(file_virtual_path_server)
-        if file_server_props.get("type") == "folder":
-          create_dir_local(file_virtual_path_server)
+  for file in file_list_server(remote_virtual_path):
+    file_virtual_path_server = path.join(remote_virtual_path, file.get("name"))
+    file_virtual_path_local = path.join(local_virtual_path, file.get("name"))
+    if file.get("type") == "folder":
+      if not exists_local(file_virtual_path_local):
+        create_dir_local(file_virtual_path_local)
       sync_get_data(data, file_virtual_path_server)
-    else:
-      if exists_server(file_virtual_path_server) and not exists_local(file):
-        download_file_server(file_virtual_path_server, file)
-  
+    elif file.get("type") == "file":
+      if not exists_local(file_virtual_path_local):
+        download_file_server(file_virtual_path_server, file_virtual_path_local)
 
 def sync_send_data(data: dict, virtual_path: str = ""):
   remote_path = data["remote_path"]
@@ -174,10 +198,12 @@ def sync_send_data(data: dict, virtual_path: str = ""):
   for file in list_dir_local(local_virtual_path):
     file_virtual_path_server = path.join(remote_virtual_path, file.name)
     if file.is_dir():
-      if exists_server(file_virtual_path_server):
-        file_server_props = properties_server(file_virtual_path_server)
-        if file_server_props.get("type") == "folder":
+      if not exists_server(file_virtual_path_server):
           create_dir_server(file_virtual_path_server)
+      else:
+          file_server_props = properties_server(file_virtual_path_server)
+          if not file_server_props.get("type") == "folder":
+            return
       sync_send_data(data, file_virtual_path_server)
     else:
       if not exists_server(file_virtual_path_server):
@@ -185,12 +211,12 @@ def sync_send_data(data: dict, virtual_path: str = ""):
 
 def sync_dir(data: dict):
   remote_path = data["remote_path"]
-  local_path = data["local_path"]
   sync_mode = data["sync_mode"]
   exists = exists_server(remote_path)
   props = properties_server(remote_path)
   if props.get("type") == "file":
     print("it is a file, not a directory")
+    logging.error("it is a file, not a directory")
     return
   if exists:
     pass
@@ -209,7 +235,6 @@ def main():
     exit(1)
   for dir in dirs_info["dirs"]:
     sync_dir(dir)
-
 
 if __name__ == "__main__":
   main()
