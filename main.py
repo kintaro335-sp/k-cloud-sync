@@ -237,6 +237,7 @@ def main():
     exit(1)
   for dir in dirs_info["dirs"]:
     sync_dir(dir)
+  print("Sync finished")
 
 if __name__ == "__main__":
   main()
