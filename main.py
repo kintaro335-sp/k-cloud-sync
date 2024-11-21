@@ -9,13 +9,15 @@ from pydantic import BaseModel, ValidationError
 import logging
 from os import path
 
-# TODO: agregar logs
+# TODO: agregar logs y mensajes de lo que esta pasando
 
 F_100MB = 100 * 1024 * 1024
 
 json_path_env = os.getenv("JSON_PATH",os.getcwd() + "/dirs.json")
 
 logs_path_env = os.getenv("LOGS_PATH",os.getcwd() + "/logs.log")
+
+validate_json = os.getenv("VALIDATE_JSON", "false")
 
 logging.basicConfig(filename=logs_path_env, level=logging.INFO, encoding='utf-8', format='%(asctime)s %(levelname)s %(message)s')
 
@@ -50,8 +52,11 @@ def load_json():
     with open(json_path_env) as json_file:
       json_data = json.load(json_file)
       try:
-        config = ConfigSchema(**json_data)
-        dirs_info = json.loads(config.model_dump_json())
+        if validate_json == "true":
+          config = ConfigSchema(**json_data)
+          dirs_info = json.loads(config.model_dump_json())
+        else:
+          dirs_info = json_data
       except ValidationError as ve:
         print(ve)
         exit(1)
@@ -75,6 +80,11 @@ def verify_auth():
     return None
   return resp.json()
 
+# utils
+
+def get_file_names(list: List[dict]) -> List[str]:
+  return [file["name"] for file in list]
+
 # lectura de archivos
 
 def exists_server(path: str) -> bool:
@@ -94,7 +104,7 @@ def properties_server(path: str) -> Optional[dict]:
   if resp.status_code != 200:
     print(f"Error al obtener las propiedades del archivo: {path}")
     logging.error(f"Error al obtener las propiedades del archivo: {path}")
-    return None
+    return {}
   return resp.json()
 
 def file_list_server(path: str) -> List[dict]:
@@ -177,7 +187,10 @@ def sync_get_data(data: dict, virtual_path: str = ""):
   remote_virtual_path = path.join(remote_path, virtual_path)
   local_virtual_path = path.join(local_path, virtual_path)
 
-  for file in file_list_server(remote_virtual_path):
+  files_server = file_list_server(remote_virtual_path)
+
+  for i, file in enumerate(files_server):
+    print(f"[{i + 1}/{len(files_server)}] Syncing {file.get('name')}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.get("name"))
     file_virtual_path_local = path.join(local_virtual_path, file.get("name"))
     if file.get("type") == "folder":
@@ -186,7 +199,11 @@ def sync_get_data(data: dict, virtual_path: str = ""):
       sync_get_data(data, file_virtual_path_server)
     elif file.get("type") == "file":
       if not exists_local(file_virtual_path_local):
+        print(f"[{i + 1}/{len(files_server)}] Downloading file...")
         download_file_server(file_virtual_path_server, file_virtual_path_local)
+        print(f"[{i + 1}/{len(files_server)}] File downloaded")
+      else:
+        print(f"[{i + 1}/{len(files_server)}] File already exists")
 
 def sync_send_data(data: dict, virtual_path: str = ""):
   remote_path = data["remote_path"]
@@ -195,22 +212,36 @@ def sync_send_data(data: dict, virtual_path: str = ""):
   remote_virtual_path = path.join(remote_path, virtual_path)
   local_virtual_path = path.join(local_path, virtual_path)
 
-  for file in list_dir_local(local_virtual_path):
+  files_server = file_list_server(remote_virtual_path)
+  files_names_server = get_file_names(files_server)
+  
+  files_local = list_dir_local(local_virtual_path)
+
+  total_files = len(list(files_local))
+
+  for i, file in enumerate(files_local):
+    print(f"[{i + 1}/{total_files}] Syncing {file.name}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.name)
     if file.is_dir():
       if not exists_server(file_virtual_path_server):
           create_dir_server(file_virtual_path_server)
       else:
           file_server_props = properties_server(file_virtual_path_server)
-          if not file_server_props.get("type") == "folder":
+          if file_server_props.get("type") != "folder":
             return
-      sync_send_data(data, file_virtual_path_server)
+      sync_send_data(data, str(file))
     else:
-      if not exists_server(file_virtual_path_server):
+      if file.name not in files_names_server:
+        print(f"[{i + 1}/{total_files}] Uploading:{file.name}")
         upload_file_server(file_virtual_path_server, file)
+        print(f"[{i + 1}/{total_files}] File:{file.name} uploaded")
+      else:
+        print(f"[{i + 1}/{total_files}] File:{file.name} already exists")
 
 def sync_dir(data: dict):
   remote_path = data["remote_path"]
+  local_path = data["local_path"]
+  print(f"Syncing {local_path}")
   sync_mode = data["sync_mode"]
   exists = exists_server(remote_path)
   props = properties_server(remote_path)
@@ -222,10 +253,12 @@ def sync_dir(data: dict):
     pass
   else:
     create_dir_server(remote_path)
-  
+ 
   if sync_mode in ["send", "bidirectional"]:
+    print("Sending data...")
     sync_send_data(data)
   if sync_mode in ["get", "bidirectional"]:
+    print("Getting data...")
     sync_get_data(data)
 
 def main():
