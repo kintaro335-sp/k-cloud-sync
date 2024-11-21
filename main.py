@@ -196,7 +196,7 @@ def sync_get_data(data: dict, virtual_path: str = ""):
     if file.get("type") == "folder":
       if not exists_local(file_virtual_path_local):
         create_dir_local(file_virtual_path_local)
-      sync_get_data(data, file_virtual_path_server)
+      sync_get_data(data, path.join(virtual_path, file.get("name")))
     elif file.get("type") == "file":
       if not exists_local(file_virtual_path_local):
         print(f"[{i + 1}/{len(files_server)}] Downloading file...")
@@ -229,7 +229,7 @@ def sync_send_data(data: dict, virtual_path: str = ""):
           file_server_props = properties_server(file_virtual_path_server)
           if file_server_props.get("type") != "folder":
             return
-      sync_send_data(data, str(file))
+      sync_send_data(data, path.join(virtual_path, file.name))
     else:
       if file.name not in files_names_server:
         print(f"[{i + 1}/{total_files}] Uploading:{file.name}")
