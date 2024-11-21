@@ -178,7 +178,7 @@ def create_dir_local(path: str):
   Path(path).mkdir(parents=True, exist_ok=True)
 
 def list_dir_local(path: str):
-  return Path(path).iterdir()
+  return Path(path).glob("*")
 
 def sync_get_data(data: dict, virtual_path: str = ""):
   remote_path = data["remote_path"]
@@ -188,9 +188,10 @@ def sync_get_data(data: dict, virtual_path: str = ""):
   local_virtual_path = path.join(local_path, virtual_path)
 
   files_server = file_list_server(remote_virtual_path)
+  total_files = len(list(files_server))
 
-  for i, file in enumerate(files_server):
-    print(f"[{i + 1}/{len(files_server)}] Syncing {file.get('name')}...")
+  for i, file in enumerate(file_list_server(remote_virtual_path)):
+    print(f"[{i + 1}/{total_files}] Syncing {file.get('name')}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.get("name"))
     file_virtual_path_local = path.join(local_virtual_path, file.get("name"))
     if file.get("type") == "folder":
@@ -199,11 +200,11 @@ def sync_get_data(data: dict, virtual_path: str = ""):
       sync_get_data(data, path.join(virtual_path, file.get("name")))
     elif file.get("type") == "file":
       if not exists_local(file_virtual_path_local):
-        print(f"[{i + 1}/{len(files_server)}] Downloading file...")
+        print(f"[{i + 1}/{total_files}] Downloading file...")
         download_file_server(file_virtual_path_server, file_virtual_path_local)
-        print(f"[{i + 1}/{len(files_server)}] File downloaded")
+        print(f"[{i + 1}/{total_files}] File downloaded")
       else:
-        print(f"[{i + 1}/{len(files_server)}] File already exists")
+        print(f"[{i + 1}/{total_files}] File already exists")
 
 def sync_send_data(data: dict, virtual_path: str = ""):
   remote_path = data["remote_path"]
@@ -219,10 +220,12 @@ def sync_send_data(data: dict, virtual_path: str = ""):
 
   total_files = len(list(files_local))
 
-  for i, file in enumerate(files_local):
+  for i, file in enumerate(list_dir_local(local_virtual_path)):
     print(f"[{i + 1}/{total_files}] Syncing {file.name}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.name)
+    print(f"{file.name} {file.is_dir()}")
     if file.is_dir():
+      print("folder")
       if not exists_server(file_virtual_path_server):
           create_dir_server(file_virtual_path_server)
       else:
@@ -249,9 +252,7 @@ def sync_dir(data: dict):
     print("it is a file, not a directory")
     logging.error("it is a file, not a directory")
     return
-  if exists:
-    pass
-  else:
+  if not exists:
     create_dir_server(remote_path)
  
   if sync_mode in ["send", "bidirectional"]:
