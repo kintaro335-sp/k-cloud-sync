@@ -8,6 +8,7 @@ from typing import Optional, List, Literal
 from pydantic import BaseModel, ValidationError
 import logging
 from os import path
+import math
 
 # TODO: agregar logs y mensajes de lo que esta pasando
 
@@ -146,13 +147,20 @@ def upload_big_file_server(path_server: str, file_path: Path):
   file_stream = open(file_path, 'rb')
   file_size = os.path.getsize(file_path)
   resp_init = requests.post(f"{base_url}/files/initialize/{path_server}?t={api_key}", json={'size': file_size})
-  if resp_init.status_code in [200, 201]:
-    return None
+  if resp_init.status_code not in [200, 201]:
+    return resp_init.json()
+  num_current_chunk = 0
+  num_chunks = math.ceil(file_size / F_100MB)
   for offset in range(0, file_size, F_100MB):
     chunk_size = F_100MB
     file_stream.seek(offset)
     chunk = file_stream.read(chunk_size)
     resp = requests.post(f"{base_url}/files/write/{path_server}?t={api_key}&pos={offset}", files={ 'file': (file_path.name, chunk) })
+    if resp.status_code in [200, 201]:
+      num_current_chunk += 1
+      print(f"Chunk {num_current_chunk}/{num_chunks} uploaded")
+    else:
+      print(f"Chunk {num_current_chunk}/{num_chunks} failed")
 
   return { "message": "ok" }
 
