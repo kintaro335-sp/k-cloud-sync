@@ -1,3 +1,6 @@
+# k-cloud-sync
+# Copyright(c) Kintaro Ponce
+# MIT Licensed
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -231,7 +234,6 @@ def sync_send_data(data: dict, virtual_path: str = ""):
   for i, file in enumerate(list_dir_local(local_virtual_path)):
     print(f"[{i + 1}/{total_files}] Syncing {file.name}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.name)
-    print(f"{file.name} {file.is_dir()}")
     if file.is_dir():
       print("folder")
       if not exists_server(file_virtual_path_server):
