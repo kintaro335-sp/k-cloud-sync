@@ -31,6 +31,8 @@ dirs_info = {
   "dirs": []
 }
 
+scopes_needed = ["files:read", "files:create"]
+
 # modelos de validacion del json
 
 class DirSchema(BaseModel):
@@ -83,6 +85,25 @@ def verify_auth():
     logging.error("Error al verificar la autenticacion")
     return None
   return resp.json()
+
+def verify_scopes():
+  base_url = dirs_info["base_url"]
+  api_key = dirs_info["api_key"]
+  resp = requests.get(f"{base_url}/auth/scopes?t={api_key}")
+  if resp.status_code != 200:
+    print("Error al verificar los scopes")
+    logging.error("Error al verificar los scopes")
+    return None
+  return resp.json()
+
+def eval_scopes(scopes: List[str]):
+  global scopes_needed
+  scopes_count = len(scopes_needed)
+  scopes_counted = 0
+  for scope in scopes:
+    if scope in scopes_needed:
+      scopes_counted += 1
+  return scopes_count == scopes_counted
 
 # utils
 
@@ -279,6 +300,16 @@ def main():
     print("Error al verificar la autenticacion")
     logging.error("Error al verificar la autenticacion")
     exit(1)
+  scopes = verify_scopes()
+  if scopes == None:
+    print("Error al verificar los scopes")
+    logging.error("Error al verificar los scopes")
+    exit(1)
+  if not eval_scopes(scopes["scopes"]):
+    print("No tienes los permisos suficientes para sincronizar")
+    logging.error("No tienes los permisos suficientes para sincronizar")
+    exit(1)
+
   for dir in dirs_info["dirs"]:
     sync_dir(dir)
   print("Sync finished")
