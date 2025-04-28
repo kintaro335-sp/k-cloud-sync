@@ -222,6 +222,9 @@ def sync_get_data(data: dict, virtual_path: str = ""):
   files_server = file_list_server(remote_virtual_path)
   total_files = len(list(files_server))
 
+  if virtual_path == "" and not exists_local(local_virtual_path):
+    create_dir_local(local_virtual_path)
+
   for i, file in enumerate(file_list_server(remote_virtual_path)):
     print(f"[{i + 1}/{total_files}] Syncing {file.get('name')}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.get("name"))
