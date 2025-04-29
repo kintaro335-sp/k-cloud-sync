@@ -3,7 +3,6 @@
 # MIT Licensed
 import os
 from dotenv import load_dotenv
-load_dotenv()
 import json
 import requests
 from pathlib import Path
@@ -12,6 +11,10 @@ from pydantic import BaseModel, ValidationError
 import logging
 from os import path
 import math
+import copy
+from threading import Thread, active_count
+
+load_dotenv(path.join(os.getcwd(), '.env'))
 
 # TODO: agregar logs y mensajes de lo que esta pasando
 
@@ -23,6 +26,11 @@ logs_path_env = os.getenv("LOGS_PATH",os.getcwd() + "/logs.log")
 
 validate_json = os.getenv("VALIDATE_JSON", "false")
 
+num_threads = int(os.getenv("THREADS", 1))
+
+if num_threads < 1:
+  num_threads = 1
+
 logging.basicConfig(filename=logs_path_env, level=logging.INFO, encoding='utf-8', format='%(asctime)s %(levelname)s %(message)s')
 
 dirs_info = {
@@ -30,6 +38,10 @@ dirs_info = {
   "api_key": "",
   "dirs": []
 }
+
+dirs_list = []
+
+threads = {}
 
 scopes_needed = ["files:read", "files:create"]
 
@@ -72,7 +84,12 @@ def load_json():
     init_json()
     exit(1)
 
+def copy_dirs():
+  global dirs_info, dirs_list
+  dirs_list = copy.deepcopy(dirs_info['dirs'])
+
 def verify_auth():
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   if base_url == "" or api_key == "":
@@ -87,6 +104,7 @@ def verify_auth():
   return resp.json()
 
 def verify_scopes():
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/auth/scopes?t={api_key}")
@@ -113,6 +131,7 @@ def get_file_names(list: List[dict]) -> List[str]:
 # lectura de archivos
 
 def exists_server(path: str) -> bool:
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/exists/{path}?t={api_key}")
@@ -123,6 +142,7 @@ def exists_server(path: str) -> bool:
   return resp.json()['exists']
 
 def properties_server(path: str) -> Optional[dict]:
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/properties/{path}?t={api_key}")
@@ -133,6 +153,7 @@ def properties_server(path: str) -> Optional[dict]:
   return resp.json()
 
 def file_list_server(path: str) -> List[dict]:
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/list/{path}?t={api_key}")
@@ -143,6 +164,7 @@ def file_list_server(path: str) -> List[dict]:
   return resp.json()['list']
 
 def download_file_server(path_server: str, local_path: str):
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.get(f"{base_url}/files/list/{path_server}?t={api_key}", stream=True)
@@ -158,6 +180,7 @@ def download_file_server(path_server: str, local_path: str):
 # escritura de archivos
 
 def create_dir_server(path: str):
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   resp = requests.post(f"{base_url}/files/folder/{path}?t={api_key}")
@@ -166,6 +189,7 @@ def create_dir_server(path: str):
   return resp.json()
 
 def upload_big_file_server(path_server: str, file_path: Path):
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   file_stream = open(file_path, 'rb')
@@ -189,6 +213,7 @@ def upload_big_file_server(path_server: str, file_path: Path):
   return { "message": "ok" }
 
 def upload_file_server(path_server: str, file_path: Path):
+  global dirs_info
   base_url = dirs_info["base_url"]
   api_key = dirs_info["api_key"]
   file_size = os.path.getsize(file_path)
@@ -296,7 +321,29 @@ def sync_dir(data: dict):
     print("Getting data...")
     sync_get_data(data)
 
+def main_single_thread():
+  global dirs_list
+  for dir in dirs_list:
+    sync_dir(dir)
+  print("Sync finished")
+
+def sync_dir_thread():
+  global dirs_list
+  while len(dirs_list) != 0:
+    try:
+      dir_info = dirs_list.pop()
+      sync_dir(dir_info)
+    except IndexError:
+      break
+
+def start_threads():
+  global threads, num_threads
+  for i in range(0, num_threads):
+    threads[i] = Thread(target=sync_dir_thread, daemon=False)
+    threads[i].start()
+
 def main():
+  global dirs_list
   load_json()
   auth = verify_auth()
   if auth == None:
@@ -312,10 +359,12 @@ def main():
     print("No tienes los permisos suficientes para sincronizar")
     logging.error("No tienes los permisos suficientes para sincronizar")
     exit(1)
+  copy_dirs()
 
-  for dir in dirs_info["dirs"]:
-    sync_dir(dir)
-  print("Sync finished")
+  if threads == 1 or len(dirs_list) == 1:
+    main_single_thread()
+  else:
+    start_threads()
 
 if __name__ == "__main__":
   main()
