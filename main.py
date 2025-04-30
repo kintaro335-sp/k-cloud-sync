@@ -288,11 +288,15 @@ def sync_send_data(data: dict, virtual_path: str = ""):
 
   total_files = len(list(files_local))
 
+  if virtual_path == '':
+    exists_dir = exists_server(remote_path)
+    if not exists_dir:
+      create_dir_server(remote_path)
+
   for i, file in enumerate(list_dir_local(local_virtual_path)):
     print(f"[{i + 1}/{total_files}] Syncing {file.name}...")
     file_virtual_path_server = path.join(remote_virtual_path, file.name)
     if file.is_dir():
-      print("folder")
       if not exists_server(file_virtual_path_server):
           create_dir_server(file_virtual_path_server)
       else:
@@ -313,14 +317,11 @@ def sync_dir(data: dict):
   local_path = data["local_path"]
   print(f"Syncing {local_path}")
   sync_mode = data["sync_mode"]
-  exists = exists_server(remote_path)
   props = properties_server(remote_path)
   if props.get("type") == "file":
     print("it is a file, not a directory")
     logging.error("it is a file, not a directory")
     return
-  if not exists:
-    create_dir_server(remote_path)
  
   if sync_mode in ["send", "bidirectional"]:
     print("Sending data...")
