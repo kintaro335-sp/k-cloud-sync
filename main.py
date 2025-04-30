@@ -12,7 +12,8 @@ import logging
 from os import path
 import math
 import copy
-from threading import Thread, active_count
+from threading import Thread
+import time
 
 load_dotenv(path.join(os.getcwd(), '.env'))
 
@@ -83,6 +84,13 @@ def load_json():
     logging.error("No json file config found: initializing")
     init_json()
     exit(1)
+
+def get_threads_alive() -> int:
+  threads_alive = 0
+  for i in threads.keys():
+    if threads[i].is_alive():
+      threads_alive += 1
+  return threads_alive
 
 def copy_dirs():
   global dirs_info, dirs_list
@@ -323,11 +331,14 @@ def sync_dir(data: dict):
 
 def main_single_thread():
   global dirs_list
+  logging.info("started")
+  print("started")
   for dir in dirs_list:
     sync_dir(dir)
+  logging.info("Sync finished")
   print("Sync finished")
 
-def sync_dir_thread():
+def sync_dir_thread(thread_id: int):
   global dirs_list
   while len(dirs_list) != 0:
     try:
@@ -335,35 +346,63 @@ def sync_dir_thread():
       sync_dir(dir_info)
     except IndexError:
       break
+  print(f"thread {thread_id} finished")
+  logging.info(f"thread {thread_id} finished")
 
 def start_threads():
   global threads, num_threads
   for i in range(0, num_threads):
-    threads[i] = Thread(target=sync_dir_thread, daemon=False)
+    threads[i] = Thread(target=sync_dir_thread, args=(i,), daemon=False)
     threads[i].start()
+    print(f"thread {i} started")
+    logging.info(f"thread {i} started")
+  threads_alive = get_threads_alive()
+  while threads_alive > 0:
+    print(f"threads alive {threads_alive}/{num_threads}")
+    logging.info(f"threads alive {threads_alive}/{num_threads}")
+    time.sleep(5)
+  logging.info("sync finished")
+  print("sync finished")
 
 def main():
   global dirs_list
+  logging.info("program started")
+  print("program started")
+  logging.info("loading data")
+  print("loading data")
   load_json()
+  logging.info("data loaded")
+  print("data loaded")
+  logging.info("authenticathing")
+  print("authenticathing")
   auth = verify_auth()
   if auth == None:
-    print("Error al verificar la autenticacion")
-    logging.error("Error al verificar la autenticacion")
     exit(1)
+  logging.info("authenticathed")
+  print("authenticathend")
+  logging.info("verifying scopes")
+  print("verifying scopes")
   scopes = verify_scopes()
   if scopes == None:
-    print("Error al verificar los scopes")
-    logging.error("Error al verificar los scopes")
     exit(1)
   if not eval_scopes(scopes["scopes"]):
     print("No tienes los permisos suficientes para sincronizar")
     logging.error("No tienes los permisos suficientes para sincronizar")
     exit(1)
+  logging.info("scopes verified")
+  print("scopes verified")
+  logging.info("loading dirs")
+  print("loading dirs")
   copy_dirs()
-
+  logging.info("dirs loaded")
+  print("dirs loaded")
   if threads == 1 or len(dirs_list) == 1:
+    logging.info("starting with 1 thread")
+    print("starting with 1 thread")
     main_single_thread()
   else:
+    logging.info(f"starting with {num_threads} threads")
+    print(f"starting with {num_threads} threads")
     start_threads()
 
 if __name__ == "__main__":
