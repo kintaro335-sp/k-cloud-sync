@@ -362,6 +362,7 @@ def start_threads():
     print(f"threads alive {threads_alive}/{num_threads}")
     logging.info(f"threads alive {threads_alive}/{num_threads}")
     time.sleep(5)
+    threads_alive = get_threads_alive()
   logging.info("sync finished")
   print("sync finished")
 
