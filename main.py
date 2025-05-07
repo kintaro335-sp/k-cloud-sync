@@ -402,10 +402,13 @@ def main():
     logging.info("starting with 1 thread")
     print("starting with 1 thread")
     main_single_thread()
-  else:
+  elif len(dirs_list) != 0:
     logging.info(f"starting with {num_threads} threads")
     print(f"starting with {num_threads} threads")
     start_threads()
+  else:
+    print("no dirs to sync")
+    logging.info("no dirs to sync")
 
 if __name__ == "__main__":
   main()
