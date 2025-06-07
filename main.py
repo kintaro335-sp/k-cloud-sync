@@ -2,6 +2,7 @@
 # Copyright(c) Kintaro Ponce
 # MIT Licensed
 import os
+import sys
 from dotenv import load_dotenv
 import json
 import requests
@@ -15,15 +16,20 @@ import copy
 from threading import Thread
 import time
 
-load_dotenv(path.join(os.getcwd(), '.env'))
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+elif __file__:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(path.join(BASE_DIR, '.env'))
 
 # TODO: agregar logs y mensajes de lo que esta pasando
 
 F_100MB = 100 * 1024 * 1024
 
-json_path_env = os.getenv("JSON_PATH",os.getcwd() + "/dirs.json")
+json_path_env = os.getenv("JSON_PATH",BASE_DIR + "/dirs.json")
 
-logs_path_env = os.getenv("LOGS_PATH",os.getcwd() + "/logs.log")
+logs_path_env = os.getenv("LOGS_PATH",BASE_DIR + "/logs.log")
 
 validate_json = os.getenv("VALIDATE_JSON", "false")
 
@@ -42,7 +48,7 @@ dirs_info = {
 
 dirs_list = []
 
-threads = {}
+threads: dict[str | int, Thread] = {}
 
 scopes_needed = ["files:read", "files:create"]
 
@@ -78,12 +84,12 @@ def load_json():
           dirs_info = json_data
       except ValidationError as ve:
         print(ve)
-        exit(1)
+        os._exit(1)
   else:
     print("No json file config found: initializing")
     logging.error("No json file config found: initializing")
     init_json()
-    exit(1)
+    os._exit(1)
 
 def get_threads_alive() -> int:
   threads_alive = 0
@@ -103,7 +109,7 @@ def verify_auth():
   if base_url == "" or api_key == "":
     print("No base url or api key found")
     logging.error("No base url or api key found")
-    exit(1)
+    os._exit(1)
   resp = requests.get(f"{base_url}/auth?t={api_key}")
   if resp.status_code != 200:
     print("Error al verificar la autenticacion")
@@ -379,18 +385,18 @@ def main():
   print("authenticathing")
   auth = verify_auth()
   if auth == None:
-    exit(1)
+    os._exit(1)
   logging.info("authenticathed")
   print("authenticathend")
   logging.info("verifying scopes")
   print("verifying scopes")
   scopes = verify_scopes()
   if scopes == None:
-    exit(1)
+    os._exit(1)
   if not eval_scopes(scopes["scopes"]):
     print("No tienes los permisos suficientes para sincronizar")
     logging.error("No tienes los permisos suficientes para sincronizar")
-    exit(1)
+    os._exit(1)
   logging.info("scopes verified")
   print("scopes verified")
   logging.info("loading dirs")
